@@ -1,11 +1,11 @@
 ---
 name: quarkus-panache-smells
-description: Detects and refactors ORM code smells in Quarkus Panache applications. Use when reviewing PanacheEntity/Repository code, diagnosing N+1 queries, data overfetching, or pagination issues.
+description: Detects and refactors ORM code smells in Quarkus Panache applications using the Repository pattern. Use when reviewing PanacheRepository code, diagnosing N+1 queries, data overfetching, or pagination issues.
 ---
 
-# Quarkus Panache ORM Code Smells Detection
+# Quarkus Panache Repository Code Smells Detection
 
-Identify and fix common ORM anti-patterns in Quarkus Panache applications (Active Record or Repository patterns).
+Identify and fix common ORM anti-patterns in Quarkus Panache applications using the Repository pattern.
 
 ## Code Smell Categories
 
@@ -43,22 +43,22 @@ public Person owner;
 
 ```java
 // BAD: Loads entire table into memory
-List<Person> all = Person.listAll();
+List<Person> all = personRepository.listAll();
 
 // BAD: Even with stream, still fetches all
-Stream<Person> stream = Person.streamAll();
+Stream<Person> stream = personRepository.streamAll();
 ```
 
 **Refactoring**:
 
 ```java
 // GOOD: Use PanacheQuery with pagination
-PanacheQuery<Person> query = Person.findAll();
+PanacheQuery<Person> query = personRepository.findAll();
 query.page(Page.ofSize(25));
 List<Person> page = query.list();
 
 // Or with range
-List<Person> range = Person.findAll().range(0, 24).list();
+List<Person> range = personRepository.findAll().range(0, 24).list();
 ```
 
 ---
@@ -71,7 +71,7 @@ List<Person> range = Person.findAll().range(0, 24).list();
 
 ```java
 // BAD: Loads all columns including BLOBs
-List<Person> persons = Person.list("status", Status.Alive);
+List<Person> persons = personRepository.list("status", Status.Alive);
 // Then only uses person.name
 ```
 
@@ -88,7 +88,7 @@ public class PersonName {
 }
 
 // Only 'name' column loaded from database
-List<PersonName> names = Person.find("status", Status.Alive)
+List<PersonName> names = personRepository.find("status", Status.Alive)
     .project(PersonName.class)
     .list();
 ```
@@ -108,7 +108,7 @@ public class DogDto {
     }
 }
 
-List<DogDto> dogs = Dog.findAll().project(DogDto.class).list();
+List<DogDto> dogs = dogRepository.findAll().project(DogDto.class).list();
 ```
 
 ---
@@ -121,7 +121,7 @@ List<DogDto> dogs = Dog.findAll().project(DogDto.class).list();
 
 ```java
 // BAD: Each iteration triggers a query
-List<Person> persons = Person.listAll();
+List<Person> persons = personRepository.listAll();
 for (Person p : persons) {
     p.address.city;  // N+1 queries!
 }
@@ -135,14 +135,15 @@ for (Person p : persons) {
 @BatchSize(size = 25)
 public List<Order> orders;
 
-// Option 2: JOIN FETCH in query
-List<Person> persons = Person.find(
+// Option 2: JOIN FETCH in query through Repository
+List<Person> persons = personRepository.find(
     "FROM Person p LEFT JOIN FETCH p.address"
 ).list();
 
-// Option 3: Use EntityGraph
-@EntityGraph(attributePaths = {"address"})
-List<Person> findAllWithAddress();
+// Option 3: Use EntityGraph in Repository method
+public List<Person> findAllWithAddress() {
+    return find("FROM Person p").withHint("javax.persistence.fetchgraph", "person-with-address").list();
+}
 ```
 
 ---
@@ -156,14 +157,14 @@ List<Person> findAllWithAddress();
 ```java
 // Entity has @ManyToOne(fetch = FetchType.EAGER)
 // Query doesn't use JOIN FETCH
-List<Dog> dogs = Dog.list("breed", "Labrador");  // N+1!
+List<Dog> dogs = dogRepository.list("breed", "Labrador");  // N+1!
 ```
 
 **Refactoring**:
 
 ```java
 // GOOD: Explicit JOIN FETCH
-List<Dog> dogs = Dog.find(
+List<Dog> dogs = dogRepository.find(
     "FROM Dog d JOIN FETCH d.owner WHERE d.breed = ?1",
     "Labrador"
 ).list();
@@ -180,7 +181,9 @@ List<Dog> dogs = Dog.find(
 ```java
 // BAD: Unidirectional with List
 @Entity
-public class Person extends PanacheEntity {
+public class Person { // Standard Entity (no PanacheEntity)
+    @Id @GeneratedValue public Long id;
+
     @OneToMany(cascade = CascadeType.ALL)
     public List<Order> orders = new ArrayList<>();
 }
@@ -191,13 +194,17 @@ public class Person extends PanacheEntity {
 ```java
 // Option 1: Make bidirectional
 @Entity
-public class Person extends PanacheEntity {
+public class Person {
+    @Id @GeneratedValue public Long id;
+
     @OneToMany(mappedBy = "person", cascade = CascadeType.ALL)
     public List<Order> orders = new ArrayList<>();
 }
 
 @Entity
-public class Order extends PanacheEntity {
+public class Order {
+    @Id @GeneratedValue public Long id;
+
     @ManyToOne(fetch = FetchType.LAZY)
     public Person person;
 }
@@ -217,7 +224,7 @@ public Set<Order> orders = new HashSet<>();
 
 ```java
 // BAD: Stream not closed, leaks connection
-Stream<Person> persons = Person.streamAll();
+Stream<Person> persons = personRepository.streamAll();
 persons.map(p -> p.name).collect(toList());
 ```
 
@@ -225,7 +232,7 @@ persons.map(p -> p.name).collect(toList());
 
 ```java
 // GOOD: Use try-with-resources
-try (Stream<Person> persons = Person.streamAll()) {
+try (Stream<Person> persons = personRepository.streamAll()) {
     return persons.map(p -> p.name).collect(toList());
 }
 ```
@@ -240,20 +247,20 @@ try (Stream<Person> persons = Person.streamAll()) {
 
 ```java
 // BAD: Verbose HQL for simple queries
-Person.find("SELECT p FROM Person p WHERE p.status = ?1", Status.Alive);
+personRepository.find("SELECT p FROM Person p WHERE p.status = ?1", Status.Alive);
 ```
 
 **Refactoring**:
 
 ```java
 // GOOD: Panache simplified query
-Person.find("status", Status.Alive);
+personRepository.find("status", Status.Alive);
 
 // GOOD: Multiple parameters
-Person.find("status = ?1 and name = ?2", Status.Alive, "John");
+personRepository.find("status = ?1 and name = ?2", Status.Alive, "John");
 
 // GOOD: Named parameters
-Person.find("status = :status",
+personRepository.find("status = :status",
     Parameters.with("status", Status.Alive));
 ```
 
@@ -262,10 +269,10 @@ Person.find("status = :status",
 | Smell               | Detection                                      | Fix                          |
 | ------------------- | ---------------------------------------------- | ---------------------------- |
 | Eager class-level   | `FetchType.EAGER` or missing LAZY on `@*ToOne` | Add `FetchType.LAZY`         |
-| No pagination       | `listAll()` / `streamAll()` on large tables    | Use `find().page()`          |
+| No pagination       | `listAll()` / `streamAll()` on large tables    | Use `repo.findAll().page()`  |
 | No projection       | Full entity for read-only                      | Use `.project(Dto.class)`    |
 | N+1 in loop         | LAZY access in `for` loop                      | `@BatchSize` or `JOIN FETCH` |
-| N+1 Eager           | Query without FETCH for EAGER relations        | Add `JOIN FETCH`             |
+| N+1 Eager           | Query without FETCH for EAGER relations        | Add `JOIN FETCH` in repo     |
 | Unidirectional List | `@OneToMany` without `mappedBy` + List         | Use Set or bidirectional     |
 | Unclosed stream     | `stream()` without try-with-resources          | Wrap in `try()`              |
 | Verbose HQL         | Full `SELECT` for simple queries               | Use Panache shortcuts        |
@@ -273,8 +280,8 @@ Person.find("status = :status",
 
 ## Panache-Specific Best Practices
 
-1. **Prefer Active Record** for simple CRUD, **Repository** for complex queries
-2. **Use `find()` over `list()`** when you need pagination/projection
-3. **Configure fetch batch size** globally: `quarkus.hibernate-orm.fetch.batch-size=25`
-4. **Use `@Transactional` on write operations** in REST resources
-5. **Consider reactive Panache** (`PanacheEntityReactive`) for non-blocking I/O
+1.  **Use Repository Pattern** (`PanacheRepository`) to separate data access logic from the entity model.
+2.  **Use `@ApplicationScoped`** for your repositories.
+3.  **Use `find()` over `list()`** when you need pagination/projection.
+4.  **Configure fetch batch size** globally: `quarkus.hibernate-orm.fetch.batch-size=25`
+5.  **Use `@Transactional` on write operations** in your service or repository layer.
