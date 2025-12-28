@@ -1,6 +1,6 @@
 ---
 name: mapstruct-patterns
-description: Constructor-based MapStruct mapping for compile-time safety in Jakarta EE. Use when implementing DTO mapping, using @Default annotations, or integrating MapStruct with jOOQ.
+description: Constructor-based MapStruct mapping for compile-time safety in Jakarta EE. Use when implementing DTO mapping or using @Default annotations.
 ---
 
 # MapStruct Patterns for Jakarta EE
@@ -140,24 +140,6 @@ public class Product {
 }
 ```
 
-### 3. Disable Fluent Setters (jOOQ Integration)
-
-For jOOQ records where fluent methods confuse MapStruct:
-
-```java
-@MetaInfServices(value = AccessorNamingStrategy.class)
-public class IgnoreFluentAccessorNamingStrategy
-    extends DefaultAccessorNamingStrategy {
-
-    @Override
-    protected boolean isFluentSetter(ExecutableElement method) {
-        return false;  // Ignore fluent setters
-    }
-}
-```
-
-Register in `META-INF/services/org.mapstruct.ap.spi.AccessorNamingStrategy`.
-
 ## Anti-Pattern: Setter-Based Mapping
 
 ```java
@@ -191,31 +173,6 @@ public interface OrderMapper {
 }
 ```
 
-## Generated Code Reuse Trick
-
-If you want to avoid code generation at build time:
-
-1. Let MapStruct generate the mapper
-2. Copy from `target/generated-sources/annotations/`
-3. Comment out the `@Mapper` annotation
-4. Maintain manually (still safe because constructors!)
-
-```java
-// Copied from generated code, now maintained manually
-public class OrderMapperImpl implements OrderMapper {
-
-    public OrderResponse toResponse(Order order) {
-        if (order == null) return null;
-
-        return new OrderResponse(
-            order.getId().toString(),
-            order.getStatus().name(),
-            order.getTotal().toString()
-        );  // Still uses constructor = still compile-safe
-    }
-}
-```
-
 ## Cookbook Index
 
 ### Setup & Configuration
@@ -228,9 +185,3 @@ public class OrderMapperImpl implements OrderMapper {
 - [constructor-mapping](cookbook/constructor-mapping.md) - Constructor-based mapping
 - [record-mapping](cookbook/record-mapping.md) - Java Records mapping
 - [entity-mapping](cookbook/entity-mapping.md) - JPA entity mapping
-
-### Advanced
-
-- [accessor-strategy](cookbook/accessor-strategy.md) - Custom accessor naming
-- [jooq-integration](cookbook/jooq-integration.md) - jOOQ record mapping
-- [manual-fallback](cookbook/manual-fallback.md) - Generated code as starting point
