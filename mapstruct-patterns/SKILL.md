@@ -15,20 +15,6 @@ Records naturally enforce this. For mutable entities, use the `@Default` annotat
 
 ## CDI Setup
 
-```xml
-<dependency>
-    <groupId>org.mapstruct</groupId>
-    <artifactId>mapstruct</artifactId>
-    <version>1.6.3</version>
-</dependency>
-<dependency>
-    <groupId>org.mapstruct</groupId>
-    <artifactId>mapstruct-processor</artifactId>
-    <version>1.6.3</version>
-    <scope>provided</scope>
-</dependency>
-```
-
 ```java
 @Mapper(componentModel = "cdi")  // CDI injection
 public interface OrderMapper {
